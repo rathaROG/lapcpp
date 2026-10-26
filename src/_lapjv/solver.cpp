@@ -4,6 +4,7 @@
 // Preserve algorithm, arithmetic precision, initialization, and tie order.
 #include "lapjv.h"
 #include <algorithm>
+#include <cstring>
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
@@ -35,7 +36,45 @@
 extern "C" int lapcpp_augment(const void*, int, size_t, size_t,
     size_t*, size_t*, size_t*, const size_t*, size_t*, double*, double*, uint64_t*) noexcept;
 
+// Keep the out-of-line minimum scans in a stable code segment on native
+// MSVC x64. This controls generated-code placement, not solver policy or ties.
+#if defined(_MSC_VER) && defined(_M_X64) && !defined(__clang__)
+#define LAPCPP_MINIMA_CODE __declspec(code_seg(".text$aa_lap_minima"))
+#else
+#define LAPCPP_MINIMA_CODE
+#endif
+
 namespace {
+
+// Classify by exponent bits on IEEE binary32/binary64 targets. Constant-size
+// memcpy is alias-safe and optimizes to register moves; other targets use std.
+inline bool exact_finite(double value) {
+    if constexpr (sizeof(double) == sizeof(uint64_t) &&
+                  std::numeric_limits<double>::is_iec559 &&
+                  std::numeric_limits<double>::radix == 2 &&
+                  std::numeric_limits<double>::digits == 53 &&
+                  std::numeric_limits<double>::max_exponent == 1024) {
+        uint64_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return (bits & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000);
+    } else {
+        return std::isfinite(value);
+    }
+}
+inline bool exact_finite(float value) {
+    if constexpr (sizeof(float) == sizeof(uint32_t) &&
+                  std::numeric_limits<float>::is_iec559 &&
+                  std::numeric_limits<float>::radix == 2 &&
+                  std::numeric_limits<float>::digits == 24 &&
+                  std::numeric_limits<float>::max_exponent == 128) {
+        uint32_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return (bits & UINT32_C(0x7f800000)) != UINT32_C(0x7f800000);
+    } else {
+        return std::isfinite(value);
+    }
+}
+
 constexpr size_t FREE = std::numeric_limits<size_t>::max();
 enum Error { Infeasible = 1, Allocation = 2, Internal = 3, Dimensions = 4 };
 template<class T> constexpr T inf() { return std::numeric_limits<T>::infinity(); }
@@ -53,7 +92,7 @@ template<class D> inline void scan_value(Minima<D>& m, D value, size_t j) {
     }
 }
 template<class T, class D>
-NOINLINE Minima<D> required_minima(const T* __restrict row, const D* __restrict v, size_t n) {
+LAPCPP_MINIMA_CODE NOINLINE Minima<D> required_minima(const T* __restrict row, const D* __restrict v, size_t n) {
     Minima<D> m{inf<D>(), inf<D>(), FREE, FREE};
     for (size_t j = 0; j < n; ++j) scan_value(m, static_cast<D>(row[j]) - v[j], j);
     return m;
@@ -81,8 +120,15 @@ template<class T> inline Minima<double> square_minima(const T* row, const double
         return n <= 16 ? scan_float32<false>(row, v, n) : grouped_float32(row, v, n);
     else return required_minima(row, v, n);
 }
+// Keep the four optional scan instantiations together on a separate aligned
+// code section on native MSVC x64. Algorithm, column order and ties are unchanged.
+#if defined(_MSC_VER) && defined(_M_X64) && !defined(__clang__)
+#define LAPCPP_OPTIONAL_SCAN_CODE __declspec(code_seg(".lapopt"))
+#else
+#define LAPCPP_OPTIONAL_SCAN_CODE
+#endif
 template<class T, bool Grouped>
-inline Minima<T> scan_optional(const T* __restrict row, const T* __restrict v, size_t n, T penalty) {
+LAPCPP_OPTIONAL_SCAN_CODE inline Minima<T> scan_optional(const T* __restrict row, const T* __restrict v, size_t n, T penalty) {
     Minima<T> m{penalty, penalty, FREE, FREE};
     size_t j = 0;
     if constexpr (Grouped)
@@ -132,13 +178,13 @@ template<class T> NOINLINE bool prefer_row_reduction(const T* costs, size_t n) {
             if (row[j] < low) low = row[j];
             if (row[j] > high) high = row[j];
         }
-        if (!std::isfinite(low) || !std::isfinite(high)) return false;
+        if (!exact_finite(low) || !exact_finite(high)) return false;
         if (low < minimum) { minimum = low; cheapest_max = high; }
         largest_min = std::max(largest_min, double(low));
         maximum = std::max(maximum, double(high));
     }
     const double range = maximum - minimum;
-    return std::isfinite(range) && (largest_min-minimum > range*.5 ||
+    return exact_finite(range) && (largest_min-minimum > range*.5 ||
         (cheapest_max-minimum > range*.75 && sampled_block_conflicts(costs,n,minimum,range)));
 }
 template<class T, class D>
@@ -176,7 +222,7 @@ struct Square {
         } else {
             initialize_columns(costs,n,v,yy);
             for (size_t j = n; j-- > 0;) {
-                if (!std::isfinite(v[j])) throw Infeasible;
+                if (!exact_finite(v[j])) throw Infeasible;
                 const size_t i = yy[j];
                 if (++free[i] == 1) xx[i] = j;
                 else yy[j] = FREE;
@@ -194,7 +240,7 @@ struct Square {
                         const double value = double(costs[i*n+j]) - v[j];
                         if (value < minimum) minimum = value;
                     }
-                if (std::isfinite(minimum)) v[j1] -= minimum;
+                if (exact_finite(minimum)) v[j1] -= minimum;
             }
         }
         for (int pass = 0; pass < 2; ++pass) {
@@ -205,7 +251,7 @@ struct Square {
                 const size_t i = free[k++]; ++reductions;
                 const T* row = costs+i*n;
                 auto m = square_minima(row,v,n);
-                if (!std::isfinite(m.first)) throw Infeasible;
+                if (!exact_finite(m.first)) throw Infeasible;
                 size_t j1 = m.j1;
                 if (m.first == m.second && yy[j1] != FREE)
                     for (size_t j = 0; j < n; ++j)
@@ -213,9 +259,9 @@ struct Square {
                 size_t displaced = yy[j1];
                 const bool reduce = reductions < saturated_product(k,8);
                 const double new_v = v[j1] - (m.second-m.first);
-                const bool lowers = reduce && std::isfinite(new_v) && new_v < v[j1];
+                const bool lowers = reduce && exact_finite(new_v) && new_v < v[j1];
                 if (lowers) v[j1] = new_v;
-                else if (reduce && std::isfinite(m.second) && displaced != FREE && m.j2 != FREE) {
+                else if (reduce && exact_finite(m.second) && displaced != FREE && m.j2 != FREE) {
                     j1 = m.j2; displaced = yy[j1];
                 }
                 xx[i] = j1; yy[j1] = i;
@@ -229,7 +275,7 @@ struct Square {
             xx,yy,columns.data(),free,predecessor.data(),distance.data(),v,nullptr);
         if (status) throw (status == 1 ? Infeasible : Internal);
         for (size_t i = 0; i < n; ++i) {
-            if (xx[i] >= n || !std::isfinite(costs[i*n+xx[i]])) throw Infeasible;
+            if (xx[i] >= n || !exact_finite(costs[i*n+xx[i]])) throw Infeasible;
             if (yy[xx[i]] != i) throw Internal;
         }
     }
@@ -250,6 +296,7 @@ template<class T> struct Rectangular {
         std::fill_n(u,rows,T(0)); std::fill_n(v,cols,T(0));
         std::iota(free,free+rows,size_t(0));
         size_t num_free = rows;
+        const size_t reduction_budget = rows >= 128 && cols-rows > rows/8 ? saturated_product(rows,size_t(Optional ? 8 : 4)) : FREE;
         const size_t reduction_limit = NearSquare ? std::min(cols,size_t(8)) : cols;
         for (int pass = 0; pass < 2; ++pass) {
             const size_t previous = num_free;
@@ -259,7 +306,7 @@ template<class T> struct Rectangular {
                 const size_t i = free[k++]; ++reductions;
                 const T* row = costs+i*cols;
                 const auto m = Optional ? optional_minima(row,v,cols,penalty) : required_minima(row,v,cols);
-                if (!std::isfinite(m.first)) throw Infeasible;
+                if (!exact_finite(m.first)) throw Infeasible;
                 size_t j1 = m.j1;
                 if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; continue; }
                 if (NearSquare && m.first == m.second && yy[j1] != FREE) {
@@ -268,18 +315,18 @@ template<class T> struct Rectangular {
                         if (yy[j] == FREE && row[j]-v[j] == m.first) { j1 = j; break; }
                 }
                 size_t displaced = yy[j1];
-                const bool reduce = reductions < saturated_product(k,reduction_limit);
+                const bool reduce = reductions < std::min(saturated_product(k,reduction_limit), reduction_budget);
                 const T new_v = v[j1] - (m.second-m.first);
-                if (reduce && std::isfinite(m.second) && !std::isfinite(new_v)) throw Infeasible;
-                const bool lowers = reduce && std::isfinite(new_v) && new_v < v[j1];
+                if (reduce && exact_finite(m.second) && !exact_finite(new_v)) throw Infeasible;
+                const bool lowers = reduce && exact_finite(new_v) && new_v < v[j1];
                 if (lowers) v[j1] = new_v;
-                else if (reduce && std::isfinite(m.second) && displaced != FREE && (Optional || m.j2 != FREE)) {
+                else if (reduce && exact_finite(m.second) && displaced != FREE && (Optional || m.j2 != FREE)) {
                     j1 = m.j2;
                     if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; continue; }
                     displaced = yy[j1];
                 }
                 xx[i] = j1; yy[j1] = i; u[i] = row[j1]-v[j1];
-                if (!std::isfinite(u[i])) throw Infeasible;
+                if (!exact_finite(u[i])) throw Infeasible;
                 if (displaced != FREE) {
                     if (lowers) free[--k] = displaced;
                     else free[num_free++] = displaced;
@@ -297,7 +344,7 @@ template<class T> struct Rectangular {
                 if (value < minimum) minimum = value;
                 order[j] = j;
             }
-            if (!std::isfinite(minimum)) throw Infeasible;
+            if (!exact_finite(minimum)) throw Infeasible;
             u[root] = minimum; xx[root] = FREE;
             size_t low = 0, current = root, dummy_row = FREE, sink;
             T dist = 0, dummy_distance = inf<T>();
@@ -325,10 +372,10 @@ template<class T> struct Rectangular {
                     if (candidate < d[j]) { d[j] = candidate; pred[j] = current; }
                     if (d[j] < best || (d[j] == best && yy[j] == FREE)) { best = d[j]; best_pos = pos; }
                 }
-                if (Optional && std::isfinite(dummy_distance) && dummy_distance <= best) {
+                if (Optional && exact_finite(dummy_distance) && dummy_distance <= best) {
                     dist = dummy_distance; sink = FREE; break;
                 }
-                if (!std::isfinite(best) || best_pos == FREE) throw Infeasible;
+                if (!exact_finite(best) || best_pos == FREE) throw Infeasible;
                 dist = best;
                 std::swap(order[low],order[best_pos]);
                 const size_t j = order[low++];
@@ -336,16 +383,16 @@ template<class T> struct Rectangular {
                 current = yy[j];
             }
             u[root] += dist;
-            if (!std::isfinite(u[root])) throw Infeasible;
+            if (!exact_finite(u[root])) throw Infeasible;
             for (size_t pos = 0; pos < low; ++pos) {
                 const size_t j = order[pos];
                 const T adjustment = dist-d[j];
                 if (yy[j] != FREE) {
                     u[yy[j]] += adjustment;
-                    if (!std::isfinite(u[yy[j]])) throw Infeasible;
+                    if (!exact_finite(u[yy[j]])) throw Infeasible;
                 }
                 v[j] -= adjustment;
-                if (!std::isfinite(v[j])) throw Infeasible;
+                if (!exact_finite(v[j])) throw Infeasible;
             }
             size_t j = sink, steps = 0;
             for (; steps < rows; ++steps) {
@@ -363,13 +410,13 @@ template<class T> struct Rectangular {
         }
         for (size_t i = 0; i < rows; ++i) {
             if (Optional && xx[i] == FREE) continue;
-            if (xx[i] >= cols || !std::isfinite(costs[i*cols+xx[i]])) throw Infeasible;
+            if (xx[i] >= cols || !exact_finite(costs[i*cols+xx[i]])) throw Infeasible;
             if (yy[xx[i]] != i) throw Internal;
         }
     }
     void solve(const T* costs, size_t rows, size_t cols, bool optional, T penalty) {
         if (optional) {
-            if (!std::isfinite(penalty)) throw Infeasible;
+            if (!exact_finite(penalty)) throw Infeasible;
             if (rows == cols) solve_impl<true,true>(costs,rows,cols,penalty);
             else solve_impl<true,false>(costs,rows,cols,penalty);
         } else if (rows > 128 && cols-rows <= rows/8) solve_impl<false,true>(costs,rows,cols,penalty);
@@ -467,7 +514,7 @@ template<class T> void solve_one(Worker<T>& w, const T* costs, const void* origi
     int64_t* output, size_t& count, double& total) {
     LAPCPP_TEST_POINT(internal);
     const size_t r = std::min(rows,cols), c = std::max(rows,cols);
-    const bool transposed = rows > cols, optional = std::isfinite(limit);
+    const bool transposed = rows > cols, optional = exact_finite(limit);
     const size_t* assignment;
     if (r == c && !optional) {
         w.square.solve(costs,c); assignment = w.square.x.data();

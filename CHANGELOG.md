@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-10-26
+
+- Bound row-reduction initialization on large rectangular required and finite-limit
+  assignments to reduce congestion overhead.
+- Use exact inline finite checks and stabilize minimum-scan code placement in
+  native MSVC x64 builds.
+- Preserve public APIs, precision options, and rejection semantics. Performance
+  changes depend on the workload.
+
 ## 1.0.0 - 2026-10-23
 
 First stable release.

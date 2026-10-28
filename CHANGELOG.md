@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 - 2026-10-28
 
 - Use float64 potentials, distances and reduced-cost arithmetic for float32
   rectangular and finite-limit assignments. Matrix storage stays float32;

@@ -130,3 +130,19 @@ cache and surviving owners after eviction, linear scratch storage, buffer
 release, partial thread startup/submission failure, and concurrent recovery.
 On Linux, add `-DCMAKE_CXX_COMPILER=clang++ -DLAPCPP_SANITIZER=address`
 or `-DLAPCPP_SANITIZER=thread` when configuring a separate build directory.
+
+## Float32 working-arithmetic regressions
+
+`test_float32_working_precision.py` checks tiny exact optima beside large costs
+in rectangular required and finite-limit solves. It covers both orientations,
+precision selections (including genuine float64 controls), indices/pairs,
+totals on/off, readonly/strided batches, worker counts 1/2, and a fixture that
+requires augmenting search. Independent Fraction enumeration checks represented
+costs and rounded half-penalties; returned totals are checked separately on the
+original input. Quantization-sensitive fixtures ensure widening does not change
+the public cost-conversion contract. These are correctness checks, not timings.
+
+The helpers in `test_lapjv.py` also model selected cost precision and rounded
+half-limits explicitly. Reduced-cost overflow beyond float32 is now solvable
+with float64 working state; genuine float64 overflow retains error/recovery
+coverage. Widening is not an arbitrary-range exactness guarantee.

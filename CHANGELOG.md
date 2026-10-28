@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Use float64 potentials, distances and reduced-cost arithmetic for float32
+  rectangular and finite-limit assignments. Matrix storage stays float32;
+  required square assignments already used float64 working arithmetic.
+- Preserve cost conversion, represented half-limit rounding, original-input
+  totals, APIs and initialization policies. Float64 working arithmetic improves
+  numerical robustness without guaranteeing exactness for arbitrary cost ranges.
+- Add exact-objective regressions for small differences beside large costs,
+  including augmenting search and represented finite-limit rounding.
+
 ## 1.1.0 - 2026-10-26
 
 - Bound row-reduction initialization on large rectangular required and finite-limit

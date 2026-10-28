@@ -1,7 +1,7 @@
 // Copyright (c) 2016 Vadim Markovtsev (source{d})
 // Copyright (c) 2026 Ratha SIV | MIT License
 // C++ solver derived from LAPX's native square and rectangular cores.
-// Preserve algorithm, arithmetic precision, initialization, and tie order.
+// Preserve cost precision, initialization, and tie order; use double working arithmetic.
 #include "lapjv.h"
 #include <algorithm>
 #include <cstring>
@@ -128,19 +128,19 @@ template<class T> inline Minima<double> square_minima(const T* row, const double
 #define LAPCPP_OPTIONAL_SCAN_CODE
 #endif
 template<class T, bool Grouped>
-LAPCPP_OPTIONAL_SCAN_CODE inline Minima<T> scan_optional(const T* __restrict row, const T* __restrict v, size_t n, T penalty) {
-    Minima<T> m{penalty, penalty, FREE, FREE};
+LAPCPP_OPTIONAL_SCAN_CODE inline Minima<double> scan_optional(const T* __restrict row, const double* __restrict v, size_t n, double penalty) {
+    Minima<double> m{penalty, penalty, FREE, FREE};
     size_t j = 0;
     if constexpr (Grouped)
         for (; j + 8 <= n; j += 8)
-            for (size_t k = 0; k < 8; ++k) scan_value(m, T(row[j+k] - v[j+k]), j+k);
-    for (; j < n; ++j) scan_value(m, T(row[j] - v[j]), j);
+            for (size_t k = 0; k < 8; ++k) scan_value(m, double(row[j+k]) - v[j+k], j+k);
+    for (; j < n; ++j) scan_value(m, double(row[j]) - v[j], j);
     return m;
 }
-template<class T> NOINLINE Minima<T> grouped_optional(const T* row, const T* v, size_t n, T penalty) {
+template<class T> NOINLINE Minima<double> grouped_optional(const T* row, const double* v, size_t n, double penalty) {
     return scan_optional<T, true>(row, v, n, penalty);
 }
-template<class T> inline Minima<T> optional_minima(const T* row, const T* v, size_t n, T penalty) {
+template<class T> inline Minima<double> optional_minima(const T* row, const double* v, size_t n, double penalty) {
     return n <= 16 ? scan_optional<T, false>(row, v, n, penalty) : grouped_optional(row, v, n, penalty);
 }
 
@@ -283,9 +283,10 @@ struct Square {
 
 template<class T> struct Rectangular {
     std::vector<size_t> x, y, free_rows, columns, predecessor;
-    std::vector<T> distance, row_dual, column_dual;
+    // Costs remain T; all evolving potentials, distances, and reduced costs use double.
+    std::vector<double> distance, row_dual, column_dual;
     template<bool Optional, bool NearSquare>
-    void solve_impl(const T* costs, size_t rows, size_t cols, T penalty) {
+    void solve_impl(const T* costs, size_t rows, size_t cols, double penalty) {
         grow(x,rows); grow(y,cols); grow(free_rows,rows); grow(columns,cols);
         grow(predecessor,cols); grow(distance,cols); grow(row_dual,rows); grow(column_dual,cols);
         auto* __restrict xx = x.data(); auto* __restrict yy = y.data();
@@ -293,7 +294,7 @@ template<class T> struct Rectangular {
         auto* __restrict pred = predecessor.data(); auto* __restrict d = distance.data();
         auto* __restrict u = row_dual.data(); auto* __restrict v = column_dual.data();
         std::fill_n(xx,rows,FREE); std::fill_n(yy,cols,FREE);
-        std::fill_n(u,rows,T(0)); std::fill_n(v,cols,T(0));
+        std::fill_n(u,rows,0.0); std::fill_n(v,cols,0.0);
         std::iota(free,free+rows,size_t(0));
         size_t num_free = rows;
         const size_t reduction_budget = rows >= 128 && cols-rows > rows/8 ? saturated_product(rows,size_t(Optional ? 8 : 4)) : FREE;
@@ -312,11 +313,11 @@ template<class T> struct Rectangular {
                 if (NearSquare && m.first == m.second && yy[j1] != FREE) {
                     if (m.j2 != FREE && yy[m.j2] == FREE) j1 = m.j2;
                     else for (size_t j = 0; j < cols; ++j)
-                        if (yy[j] == FREE && row[j]-v[j] == m.first) { j1 = j; break; }
+                        if (yy[j] == FREE && double(row[j])-v[j] == m.first) { j1 = j; break; }
                 }
                 size_t displaced = yy[j1];
                 const bool reduce = reductions < std::min(saturated_product(k,reduction_limit), reduction_budget);
-                const T new_v = v[j1] - (m.second-m.first);
+                const double new_v = v[j1] - (m.second-m.first);
                 if (reduce && exact_finite(m.second) && !exact_finite(new_v)) throw Infeasible;
                 const bool lowers = reduce && exact_finite(new_v) && new_v < v[j1];
                 if (lowers) v[j1] = new_v;
@@ -325,7 +326,7 @@ template<class T> struct Rectangular {
                     if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; continue; }
                     displaced = yy[j1];
                 }
-                xx[i] = j1; yy[j1] = i; u[i] = row[j1]-v[j1];
+                xx[i] = j1; yy[j1] = i; u[i] = double(row[j1])-v[j1];
                 if (!exact_finite(u[i])) throw Infeasible;
                 if (displaced != FREE) {
                     if (lowers) free[--k] = displaced;
@@ -337,9 +338,9 @@ template<class T> struct Rectangular {
             const size_t root = free[f];
             // Keep root's reduced costs in d; the first relaxation below
             // reuses them instead of reading the row again.
-            T minimum = Optional ? penalty : inf<T>();
+            double minimum = Optional ? penalty : inf<double>();
             for (size_t j = 0; j < cols; ++j) {
-                const T value = costs[root*cols+j]-v[j];
+                const double value = double(costs[root*cols+j])-v[j];
                 d[j] = value;
                 if (value < minimum) minimum = value;
                 order[j] = j;
@@ -347,28 +348,28 @@ template<class T> struct Rectangular {
             if (!exact_finite(minimum)) throw Infeasible;
             u[root] = minimum; xx[root] = FREE;
             size_t low = 0, current = root, dummy_row = FREE, sink;
-            T dist = 0, dummy_distance = inf<T>();
+            double dist = 0, dummy_distance = inf<double>();
             for (;;) {
                 if constexpr (Optional) {
-                    const T candidate = dist + (penalty-u[current]);
+                    const double candidate = dist + (penalty-u[current]);
                     if (candidate < dummy_distance) { dummy_distance = candidate; dummy_row = current; }
                 }
                 const T* row = costs+current*cols;
-                const T row_potential = u[current];
-                T best = inf<T>();
+                const double row_potential = u[current];
+                double best = inf<double>();
                 size_t best_pos = FREE;
                 if (low == 0) {
                     // Root relaxation in identity order: same values as relaxing
                     // from d = inf. Infinite columns get pred = root, but cannot
                     // be selected while their distance remains infinite.
                     for (size_t j = 0; j < cols; ++j) {
-                        const T candidate = dist + (d[j]-row_potential);
+                        const double candidate = dist + (d[j]-row_potential);
                         d[j] = candidate; pred[j] = current;
                         if (candidate < best || (candidate == best && yy[j] == FREE)) { best = candidate; best_pos = j; }
                     }
                 } else for (size_t pos = low; pos < cols; ++pos) {
                     const size_t j = order[pos];
-                    const T candidate = dist + (row[j]-v[j]-row_potential);
+                    const double candidate = dist + (double(row[j])-v[j]-row_potential);
                     if (candidate < d[j]) { d[j] = candidate; pred[j] = current; }
                     if (d[j] < best || (d[j] == best && yy[j] == FREE)) { best = d[j]; best_pos = pos; }
                 }
@@ -386,7 +387,7 @@ template<class T> struct Rectangular {
             if (!exact_finite(u[root])) throw Infeasible;
             for (size_t pos = 0; pos < low; ++pos) {
                 const size_t j = order[pos];
-                const T adjustment = dist-d[j];
+                const double adjustment = dist-d[j];
                 if (yy[j] != FREE) {
                     u[yy[j]] += adjustment;
                     if (!exact_finite(u[yy[j]])) throw Infeasible;

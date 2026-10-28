@@ -55,6 +55,61 @@ template<class T> void numerical_paths() {
     }
 }
 
+// Binary fractions keep exact objective checks independent of a relative tolerance.
+// The 3x4 fixture leaves a row for augmenting search after row reduction.
+template<class T> void working_precision() {
+    for (auto scale : {std::pair<double,double>{181406.1875,1./4096}, {16777216.,1./8}}) {
+        const double high=scale.first, small=scale.second;
+        for (size_t r : {size_t(2),size_t(3)}) {
+            const size_t c=r+1;
+            const std::vector<T> base = r==2
+                ? std::vector<T>{T(high),T(2*small),T(high), T(high),T(small),T(high)}
+                : std::vector<T>{T(2*small),T(2*small),T(high),T(high),
+                                 T(small),T(small),T(high),T(high), T(0),T(0),T(high),T(high)};
+            for (bool transpose : {false,true}) {
+                const size_t rows=transpose?c:r, cols=transpose?r:c;
+                std::vector<T> costs(r*c);
+                for (size_t i=0; i<r; ++i) for (size_t j=0; j<c; ++j)
+                    costs[transpose?j*r+i:i*c+j]=base[i*c+j];
+                for (double limit : {inf<double>(),2*high}) for (bool pairs : {false,true}) {
+                    Worker<T> w;
+                    std::vector<int64_t> output(2*r);
+                    size_t count=0; double total=0;
+                    solve_one(w,costs.data(),costs.data(),std::is_same_v<T,float>,
+                              rows,cols,limit,pairs,true,output.data(),count,total);
+                    CHECK(count==r && total==high+small);
+                    std::set<int64_t> seen_rows,seen_cols;
+                    double selected=0;
+                    for (size_t i=0; i<count; ++i) {
+                        const auto row=output[pairs?2*i:i],col=output[pairs?2*i+1:r+i];
+                        CHECK(row>=0 && size_t(row)<rows && col>=0 && size_t(col)<cols);
+                        CHECK(seen_rows.insert(row).second && seen_cols.insert(col).second);
+                        selected+=double(costs[size_t(row)*cols+size_t(col)]);
+                    }
+                    CHECK(selected==high+small);
+                    if (!std::isfinite(limit)) {
+                        double dual=0;
+                        for (size_t i=0; i<r; ++i) dual+=w.rectangular.row_dual[i];
+                        for (size_t j=0; j<c; ++j) dual+=w.rectangular.column_dual[j];
+                        CHECK(dual==selected);
+                        for (size_t i=0; i<r; ++i) for (size_t j=0; j<c; ++j)
+                            CHECK(w.rectangular.row_dual[i]+w.rectangular.column_dual[j]
+                                  <=double(base[i*c+j]));
+                    }
+                }
+            }
+        }
+    }
+    // Preserve the cost-type rounding of limit/2 before widening state.
+    const T costs[]={T(1./134217728),T(.5),T(.5),T(2)};
+    Worker<T> w;
+    int64_t output[4]; size_t count=0; double total=0;
+    solve_one(w,costs,costs,std::is_same_v<T,float>,2,2,1-1./33554432,
+              true,true,output,count,total);
+    if constexpr (std::is_same_v<T,float>) CHECK(count==2 && total==1);
+    else CHECK(count==1 && total==1./134217728);
+}
+
 template<class T> int call(size_t batch, size_t rows, size_t cols, size_t threads,
                           size_t& failed, double limit = inf<double>()) {
     std::vector<T> costs(batch*rows*cols, T(1));
@@ -160,6 +215,7 @@ template<class T> void storage_and_failures() {
 int main() {
     try {
         numerical_paths<float>(); numerical_paths<double>();
+        working_precision<float>(); working_precision<double>();
         storage_and_failures<float>(); storage_and_failures<double>();
         auto retained=get_pool(16);
         CHECK(retained==get_pool(16));

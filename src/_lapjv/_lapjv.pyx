@@ -263,9 +263,11 @@ def lapjv(cost, extend_cost=False, double cost_limit=np.inf,
     LAPCPP uses C++ for required square completion. Rectangular and
     finite-limit problems use native C++ paths without square padding.
 
-    Required square problems use float64 potentials and distances even with
-    float32 costs. Rectangular and finite-limit paths use the selected working
-    precision.
+    All paths use float64 potentials, distances, and reduced-cost arithmetic,
+    while cost storage follows precision. The half-limit is rounded in that
+    cost dtype before its two halves are combined and promoted for search.
+    Float64 working arithmetic improves robustness but cannot guarantee exact
+    optimization for arbitrary cost ranges or restore costs rounded by conversion.
     A finite limit optimizes rejection jointly with matching; it is not
     equivalent to filtering a required solution after solving. Equal-cost
     optima can produce different assignments across solvers or precisions.
@@ -383,9 +385,11 @@ def lapjv_batch(costs, extend_cost=False, double cost_limit=np.inf,
     LAPCPP uses C++ for required square completion. Rectangular and
     finite-limit problems use native C++ paths without square padding.
 
-    Required square problems use float64 potentials and distances even with
-    float32 costs. Rectangular and finite-limit paths use the selected working
-    precision.
+    All paths use float64 potentials, distances, and reduced-cost arithmetic,
+    while cost storage follows precision. The half-limit is rounded in that
+    cost dtype before its two halves are combined and promoted for search.
+    Float64 working arithmetic improves robustness but cannot guarantee exact
+    optimization for arbitrary cost ranges or restore costs rounded by conversion.
     Finite limits optimize rejection jointly with matching; they are not
     equivalent to filtering required solutions after solving. Equal-cost
     optima can produce different assignments across solvers or precisions.

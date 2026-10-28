@@ -59,21 +59,34 @@ lapjv_batch(costs, extend_cost=False, cost_limit=np.inf, return_cost=True,
 | --- | --- |
 | `cost` / `costs` | Real numeric arrays with shape `(N, M)` / `(B, N, M)`. |
 | `extend_cost=True` | Allows rectangular inputs when the limit is infinite; no square padding is used. |
-| `cost_limit` | A finite value permits unmatched endpoints at a penalty of `cost_limit / 2` each. Finite limits also permit rectangles and apply to square inputs. |
+| `cost_limit` | A finite value permits unmatched endpoints, each charged `cost_limit / 2` rounded to the selected cost dtype. Finite limits also permit rectangles and apply to square inputs. |
 | `return_cost` | Defaults to `True`; totals sum selected original costs in float64 and exclude rejection penalties. `False` omits totals and skips the sum. |
 | `precision` | `"native"` preserves float32/float64; other real numeric inputs use float64. Explicit `"float32"` / `"float64"` select working costs. |
 | `output` | `"indices"` returns aligned row/column arrays; `"pairs"` returns `(K, 2)` arrays. |
 | `n_threads` | Batch only. `0` / `None` selects automatically; negative values use one worker; positive values are capped by batch size. |
+
+All solver paths use float64 potentials, distances and reduced-cost arithmetic,
+while matrix storage follows `precision`. Finite-limit half-penalties retain
+rounding in that selected cost dtype before search. This reduces cancellation
+with float32 costs without widening the whole matrix. Extreme cost ranges and
+cost conversion can still obscure small objective differences; this is not an
+arbitrary-range exactness guarantee.
 
 Rows are sorted and all returned indices are int64. They identify the selected
 pairs; unmatched items are absent. Batch results contain lists because each
 problem may select a different number of pairs. Equal-cost optima may return
 different assignments across solvers or precisions.
 
-With a finite limit `L`, the optimized objective is
-`sum(selected costs) + (N + M - 2*K) * L/2`.
-The reported `total` contains only the first term. Joint rejection is different
-from solving a full assignment and then filtering high-cost pairs.
+With a finite limit `L`, define `h = cost_dtype(L/2)`, where `cost_dtype` is
+the cost storage dtype selected by `precision`. The optimized objective is
+`sum(selected represented costs) + (N + M - 2*K) * h`, where `N` and `M`
+are the input dimensions and `K` is the number of selected pairs.
+Represented costs are the input values after conversion to that cost dtype.
+
+The reported `total` separately sums the selected **original-input values** in
+float64 and excludes rejection penalties. It can differ from the represented-cost
+sum when conversion rounds input values. Joint rejection is different from
+solving a full assignment and then filtering high-cost pairs.
 See [API details](docs/api.md) for numerical and memory behavior.
 
 ## Development and checks

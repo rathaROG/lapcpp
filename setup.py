@@ -128,7 +128,7 @@ def main_setup():
     version = next(line.split('"')[1] for line in Path("lapcpp/__init__.py").read_text().splitlines() if line.startswith("__version__"))
     setup(
         name="lapcpp", version=version,
-        description="Native C++ linear assignment solvers with implicit rejection and batch solving",
+        description="Native C++ linear assignment solvers with implicit rejection and batch solving.",
         long_description=Path("README.md").read_text(encoding="utf-8"),
         long_description_content_type="text/markdown",
         author="Ratha SIV", maintainer="rathaROG", license="MIT",

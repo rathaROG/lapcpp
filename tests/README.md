@@ -146,3 +146,9 @@ The helpers in `test_lapjv.py` also model selected cost precision and rounded
 half-limits explicitly. Reduced-cost overflow beyond float32 is now solvable
 with float64 working state; genuine float64 overflow retains error/recovery
 coverage. Widening is not an arbitrary-range exactness guarantee.
+
+`test_reduction_policy.py` checks tied and congested separable costs across the
+former rectangular policy boundaries and optional squares. Exact optima for
+every matching cardinality cover positive, zero and negative limits, forbidden
+columns, both orientations and dtypes, and single/batch input preservation.
+The checks allow alternative optimal pairs and contain no timing assertions.

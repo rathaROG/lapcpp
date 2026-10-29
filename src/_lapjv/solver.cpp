@@ -285,7 +285,7 @@ template<class T> struct Rectangular {
     std::vector<size_t> x, y, free_rows, columns, predecessor;
     // Costs remain T; all evolving potentials, distances, and reduced costs use double.
     std::vector<double> distance, row_dual, column_dual;
-    template<bool Optional, bool NearSquare>
+    template<bool Optional>
     void solve_impl(const T* costs, size_t rows, size_t cols, double penalty) {
         grow(x,rows); grow(y,cols); grow(free_rows,rows); grow(columns,cols);
         grow(predecessor,cols); grow(distance,cols); grow(row_dual,rows); grow(column_dual,cols);
@@ -297,8 +297,13 @@ template<class T> struct Rectangular {
         std::fill_n(u,rows,0.0); std::fill_n(v,cols,0.0);
         std::iota(free,free+rows,size_t(0));
         size_t num_free = rows;
-        const size_t reduction_budget = rows >= 128 && cols-rows > rows/8 ? saturated_product(rows,size_t(Optional ? 8 : 4)) : FREE;
-        const size_t reduction_limit = NearSquare ? std::min(cols,size_t(8)) : cols;
+        // Bound displacement-chain reductions uniformly across rectangular shapes.
+        const size_t reduction_limit = std::min(cols,size_t(4));
+        // Long optional displacement chains usually finish during reduction;
+        // cutting them moves work into augmentation. Required assignment only.
+        const size_t window = Optional ? FREE : std::max(rows,size_t(8));
+        size_t stalled = 0;
+        bool reduction_active = true;
         for (int pass = 0; pass < 2; ++pass) {
             const size_t previous = num_free;
             num_free = 0;
@@ -309,25 +314,30 @@ template<class T> struct Rectangular {
                 const auto m = Optional ? optional_minima(row,v,cols,penalty) : required_minima(row,v,cols);
                 if (!exact_finite(m.first)) throw Infeasible;
                 size_t j1 = m.j1;
-                if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; continue; }
-                if (NearSquare && m.first == m.second && yy[j1] != FREE) {
+                if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; stalled = 0; continue; }
+                if (m.first == m.second && yy[j1] != FREE) {
                     if (m.j2 != FREE && yy[m.j2] == FREE) j1 = m.j2;
                     else for (size_t j = 0; j < cols; ++j)
                         if (yy[j] == FREE && double(row[j])-v[j] == m.first) { j1 = j; break; }
                 }
                 size_t displaced = yy[j1];
-                const bool reduce = reductions < std::min(saturated_product(k,reduction_limit), reduction_budget);
+                const bool reduce = reduction_active && reductions < saturated_product(k,reduction_limit);
                 const double new_v = v[j1] - (m.second-m.first);
                 if (reduce && exact_finite(m.second) && !exact_finite(new_v)) throw Infeasible;
                 const bool lowers = reduce && exact_finite(new_v) && new_v < v[j1];
                 if (lowers) v[j1] = new_v;
                 else if (reduce && exact_finite(m.second) && displaced != FREE && (Optional || m.j2 != FREE)) {
                     j1 = m.j2;
-                    if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; continue; }
+                    if (Optional && j1 == FREE) { xx[i] = FREE; u[i] = penalty; stalled = 0; continue; }
                     displaced = yy[j1];
                 }
                 xx[i] = j1; yy[j1] = i; u[i] = double(row[j1])-v[j1];
                 if (!exact_finite(u[i])) throw Infeasible;
+                if (displaced == FREE) stalled = 0;
+                else {
+                    ++stalled;
+                    if (reduction_active && stalled >= window) reduction_active = false;
+                }
                 if (displaced != FREE) {
                     if (lowers) free[--k] = displaced;
                     else free[num_free++] = displaced;
@@ -418,10 +428,8 @@ template<class T> struct Rectangular {
     void solve(const T* costs, size_t rows, size_t cols, bool optional, T penalty) {
         if (optional) {
             if (!exact_finite(penalty)) throw Infeasible;
-            if (rows == cols) solve_impl<true,true>(costs,rows,cols,penalty);
-            else solve_impl<true,false>(costs,rows,cols,penalty);
-        } else if (rows > 128 && cols-rows <= rows/8) solve_impl<false,true>(costs,rows,cols,penalty);
-        else solve_impl<false,false>(costs,rows,cols,penalty);
+            solve_impl<true>(costs,rows,cols,penalty);
+        } else solve_impl<false>(costs,rows,cols,penalty);
     }
 };
 

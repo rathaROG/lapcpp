@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 - 2026-10-28
+
+- Use a four-reduction budget per processed free row and prefer a free column
+  among equal reduced-cost minima in rectangular and finite-limit assignments.
+- Stop further price reductions after a sustained displacement chain in required
+  rectangular assignments. Finite-limit assignments retain their reduction
+  chains, avoiding the optional regressions seen with a window in both modes.
+- Preserve APIs, precision conversion, rejection semantics and the required-square
+  solver. Performance remains workload dependent; see the
+  [initialization policy and tradeoffs](benchmarks/required-window-policy.md).
+
 ## 1.1.1 - 2026-10-28
 
 - Use float64 potentials, distances and reduced-cost arithmetic for float32

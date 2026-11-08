@@ -8,13 +8,15 @@ class BuildExt(build_ext):
     """Add portable optimization flags for the compiler and linker.
 
     Environment variables control these options:
+
     - LAPCPP_BASEOPTS=0 disables the base flags that LAPCPP adds and link-time
       optimization (LTO). Other compiler defaults may still apply.
     - LAPCPP_NATIVE=1 enables -march=native -mtune=native.
     - LAPCPP_LTO=0 disables LTO, including inherited LTO defaults.
 
     LAPCPP_BASEOPTS=0 does not guarantee an unoptimized or debug build.
-    Native tuning is disabled by default. Strict floating-point arithmetic is always used.
+    Native tuning is disabled by default.
+    The build always uses strict floating-point arithmetic.
     """
     def has_flag(self, flag, link_flag=None):
         import tempfile, os
@@ -133,12 +135,23 @@ def main_setup():
         long_description_content_type="text/markdown",
         author="Ratha SIV", maintainer="rathaROG", license="MIT",
         url="https://github.com/rathaROG/lapcpp",
+        project_urls={
+            "Documentation": "https://github.com/rathaROG/lapcpp/blob/main/docs/api.md",
+            "Source": "https://github.com/rathaROG/lapcpp",
+            "Issues": "https://github.com/rathaROG/lapcpp/issues",
+            "Changelog": "https://github.com/rathaROG/lapcpp/blob/main/CHANGELOG.md",
+            "Paper": "https://github.com/rathaROG/lap-paper",
+        },
         license_files=['LICENSE', 'NOTICE', 'tests/LICENSE', 'src/_lapjv/LICENSE'],
         packages=["lapcpp"], package_data={"lapcpp": ["*.pyi", "py.typed"]},
         include_package_data=True,
         python_requires=">=3.9", install_requires=["numpy>=1.21.6"],
-        extras_require={"test": ["pytest>=7", "scipy>=1.9", "pytest-timeout"],
-                        "benchmark": ["scipy>=1.9", "lapx==0.11.1"], "dev": ["build", "setuptools>=77", "wheel", "pytest>=7", "scipy>=1.9", "pytest-timeout", "pyright"]},
+        extras_require={
+            "test": ["pytest>=7", "scipy>=1.9", "pytest-timeout"],
+            "benchmark": ["scipy>=1.9", "laprust>=1.2.0", "lapx>=0.13.0", "packaging>=21.3"],
+            "dev": ["build", "setuptools>=77", "wheel", "pytest>=7",
+                    "scipy>=1.9", "pytest-timeout", "pyright"],
+        },
         classifiers=['Development Status :: 5 - Production/Stable',
                      'Environment :: Console',
                      'Intended Audience :: Developers',
@@ -177,22 +190,25 @@ if __name__ == "__main__":
     >>> python -m build --sdist
     >>> python -m build --wheel
 
-    The build applies safe base optimizations automatically:
+    The build applies base optimizations automatically:
+
     - /O2 on MSVC or -O3 on GCC and Clang enables compiler optimizations.
     - -DNDEBUG disables debug assertions.
     - Link-time optimization (LTO) applies when the compiler and linker support it.
-    - Strict floating-point arithmetic (/fp:precise or -fno-fast-math) is always used;
-      there is no fast-math option.
-    - Windows builds use /std:c++17; /std:c++latest generated slower solver code with MSVC 14.44.
+    - The build always uses strict floating-point arithmetic (/fp:precise or -fno-fast-math).
+      There is no fast-math option.
+    - Windows builds use /std:c++17. With MSVC 14.44, /std:c++latest generated slower solver code.
 
     Environment variables control additional options:
+
     - LAPCPP_BASEOPTS=0 disables the base flags that LAPCPP adds and LTO.
       Other compiler defaults may still apply.
     - LAPCPP_NATIVE=1 enables -march=native -mtune=native on GCC and Clang only.
     - LAPCPP_LTO=0 disables LTO, including inherited LTO defaults.
 
     LAPCPP_BASEOPTS=0 does not guarantee an unoptimized or debug build.
-    Native tuning is disabled by default. Keep it disabled for portable release wheels.
+    Native tuning is disabled by default.
+    For portable release wheels, keep native tuning disabled.
 
     To build with native tuning on Linux or macOS, use this command:
     >>> LAPCPP_NATIVE=1 python -m build --wheel

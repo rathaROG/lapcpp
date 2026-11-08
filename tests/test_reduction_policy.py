@@ -1,4 +1,4 @@
-"""Objective regressions for tied and congested row-reduction initialization.
+"""Check objective regressions for tied and congested row-reduction initialization.
 
 Separable binary-fraction costs give independent exact optima at every matching
 cardinality, including rejection. No particular tied assignment or timing is

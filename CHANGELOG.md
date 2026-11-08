@@ -1,21 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Require LAPX 0.13.0 or newer for all package benchmarks.
+- Record and check the installed LAPX version.
+- Include laprust in the benchmark installation extra.
+- Refresh installation, development and paper links.
+- Distinguish the package benchmarks from the paper's reproducible experiment
+  suite.
+- Add package, license, paper and total/monthly download badges.
+- Add documentation and support links to the package metadata.
+
 ## 1.2.0 - 2026-10-28
 
-- Use a four-reduction budget per processed free row and prefer a free column
-  among equal reduced-cost minima in rectangular and finite-limit assignments.
+- Use a four-reduction budget per processed free row in rectangular and
+  finite-limit assignments.
+- Prefer a free column among equal reduced-cost minima in rectangular and
+  finite-limit assignments.
 - Stop further price reductions after a sustained displacement chain in required
   rectangular assignments. Finite-limit assignments retain their reduction
-  chains, avoiding the optional regressions seen with a window in both modes.
+  chains. This avoids the optional regressions seen with a window in both modes.
 - Preserve APIs, precision conversion, rejection semantics and the required-square
-  solver. Performance remains workload dependent; see the
+  solver. Performance remains workload dependent. See the
   [initialization policy and tradeoffs](benchmarks/required-window-policy.md).
 
 ## 1.1.1 - 2026-10-28
 
 - Use float64 potentials, distances and reduced-cost arithmetic for float32
-  rectangular and finite-limit assignments. Matrix storage stays float32;
-  required square assignments already used float64 working arithmetic.
+  rectangular and finite-limit assignments. Matrix storage stays float32.
+  Required square assignments already used float64 working arithmetic.
 - Preserve cost conversion, represented half-limit rounding, original-input
   totals, APIs and initialization policies. Float64 working arithmetic improves
   numerical robustness without guaranteeing exactness for arbitrary cost ranges.
@@ -26,59 +39,69 @@
 
 - Bound row-reduction initialization on large rectangular required and finite-limit
   assignments to reduce congestion overhead.
-- Use exact inline finite checks and stabilize minimum-scan code placement in
-  native MSVC x64 builds.
+- Use exact inline finite checks in native MSVC x64 builds.
+- Stabilize minimum-scan code placement in native MSVC x64 builds.
 - Preserve public APIs, precision options, and rejection semantics. Performance
   changes depend on the workload.
 
 ## 1.0.0 - 2026-10-23
 
-First stable release.
+This is the first stable release.
 
 ### Package and API
 
-- Standalone `lapcpp` distribution and import namespace for Python 3.9+.
-- `lapjv` and `lapjv_batch` derived from the LAPX 0.11.1 `lapjvh` solver.
-- Future solver development is led by lapcpp (C++) and laprust (Rust), with
-  LAPX incorporating their fixes and improvements.
-- Native rectangular assignment and implicit finite-limit rejection.
-- Float32/float64 working costs, index or pair output, and reusable batch workers.
-- Type annotations (`py.typed`).
+- Provide a standalone `lapcpp` distribution and import namespace for Python 3.9+.
+- Derive `lapjv` and `lapjv_batch` from the LAPX 0.11.1 `lapjvh` solver.
+- lapcpp (C++) and laprust (Rust) lead future solver development.
+  LAPX incorporates their fixes and improvements.
+- Support native rectangular assignment and implicit finite-limit rejection.
+- Support float32/float64 working costs and index or pair output.
+- Reuse batch workers.
+- Provide type annotations (`py.typed`).
 
 ### Solver and performance
 
-- Rectangular and finite-limit search: reuse the root row's reduced costs for the
-  first relaxation instead of resetting distances and predecessors separately.
-- Parallel batches claim consecutive tiny problems in chunks (at most 64 problems
-  and about 4096 costs per claim), reducing contention and false sharing.
-- Batch results: convert counts once, and build per-problem views by row iteration
-  when every problem is known to be fully matched (batches of 8 or more).
+- Reuse the root row's reduced costs for the first relaxation in rectangular
+  and finite-limit search. This replaces separate resets of distances and predecessors.
+- Parallel batches claim consecutive tiny problems in chunks. Each claim
+  includes at most 64 problems and about 4096 costs. This reduces contention and
+  false sharing.
+- Convert batch result counts once. For batches of 8 or more, build per-problem
+  views by row iteration when every problem is known to be fully matched.
 - Windows builds use MSVC `/std:c++17` instead of `/std:c++latest`, which was
   10-33% slower on medium rectangles and 256x256 batches with MSVC 14.44.
-- Stricter native checks: a path walk-back that never reaches its root and a final
-  matching with `y[x[i]] != i` report an internal error instead of returning.
+- If a path walk-back never reaches its root, report an internal error instead
+  of returning a result.
+- If a final matching has `y[x[i]] != i`, report an internal error instead of
+  returning a result.
 
 ### Testing and CI
 
-- Numerical/API tests, historical LAPX regression fixtures, edge/ownership checks,
-  and exhaustive references.
-- SciPy-free ARM numerical tests, complete empty-result and batch-size boundaries.
-- Native allocation/worker failure injection, adapter exception/recovery checks,
-  and native sanitizer jobs in separate PR/manual workflows.
-- Required cross-package concurrency and isolated editable-install tests in CI.
-- Full standalone wheel testing and older NumPy runtime compatibility jobs.
+- Add numerical/API tests, historical LAPX regression fixtures, edge/ownership
+  checks, and exhaustive references.
+- Add SciPy-free ARM numerical tests.
+- Cover all empty-result and batch-size boundaries.
+- Inject native allocation/worker failures in tests.
+- Check adapter exceptions and recovery.
+- Add native sanitizer jobs in separate PR/manual workflows.
+- Require cross-package concurrency and isolated editable-install tests in CI.
+- Run full tests on standalone wheels.
+- Add compatibility jobs for older NumPy runtimes.
 
 ### Benchmarks
 
-- Five-candidate benchmarks: dedicated SciPy, lapcpp, laprust and pair-output LAPX
-  JVX/JVS functions, following LAPX v0.11.1 settings and uniform input generation.
-- Single/tracking use the same 39 matrix shapes, including 4000x3000 and other large
-  rectangles; batch uses 65 tapered workloads with medium rectangles and small-batch
+- Compare five candidates through dedicated SciPy, lapcpp, laprust and pair-output
+  LAPX JVX/JVS functions. Use LAPX v0.11.1 settings and uniform input generation.
+- Use the same 39 matrix shapes for single/tracking benchmarks, including
+  4000x3000 and other large rectangles.
+- Use 65 tapered batch workloads with medium rectangles and small-batch
   overhead cases. Every mode includes tiny and small rectangular workloads.
-- Tracking always solves first and post-filters every candidate; no solver cost_limit
-  or rejection expansion, with the original unmatched-list construction and
-  threshold sweep.
-- Calls per sample are calibrated (at least 10 ms) and each solver is warmed right
-  before its own sample; sub-millisecond cases use 7 rounds. `--reference-timing`
-  keeps the pinned LAPX timing for comparison.
-- Benchmark verdicts and ranked test-count/total-time summaries in text and JSON.
+- In tracking benchmarks, solve first and post-filter every candidate.
+  Do not pass a solver cost_limit or expand the matrix for rejection.
+  Preserve the original unmatched-list construction and threshold sweep.
+- Calibrate calls per sample to target at least 10 ms.
+  Warm each solver immediately before its own sample. Use 7 rounds for
+  sub-millisecond cases. `--reference-timing` keeps the pinned LAPX timing for
+  comparison.
+- Report benchmark verdicts and ranked test-count/total-time summaries in text
+  and JSON.

@@ -1,4 +1,4 @@
-"""Run after installing lapcpp."""
+"""After you install lapcpp, run this example."""
 import numpy as np
 import lapcpp
 

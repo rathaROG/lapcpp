@@ -78,12 +78,12 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/cibw-cache
-          key: cibw-4.3.3-${{ matrix.target.name }}-${{ matrix.python.name }}-${{ hashFiles('pyproject.toml') }}
+          key: cibw-4.3.5-${{ matrix.target.name }}-${{ matrix.python.name }}-${{ hashFiles('pyproject.toml') }}
           restore-keys: |
-            cibw-4.3.3-${{ matrix.target.name }}-${{ matrix.python.name }}-
-            cibw-4.3.3-${{ matrix.target.name }}-
+            cibw-4.3.5-${{ matrix.target.name }}-${{ matrix.python.name }}-
+            cibw-4.3.5-${{ matrix.target.name }}-
       - name: Install wheel builder
-        run: python -m pip install cibuildwheel==4.3.3
+        run: python -m pip install cibuildwheel==4.3.5
       - name: Locate MSVC runtime DLLs for wheel repair
         if: runner.os == 'Windows'
         shell: pwsh
